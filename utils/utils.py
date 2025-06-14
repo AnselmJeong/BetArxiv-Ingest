@@ -50,7 +50,7 @@ async def get_embedding(text: str, client) -> list[float]:
         )
         return response.embeddings[0].values
     except Exception as e:
-        logger.error(f"Error generating embedding: {e}")
+        # logger.error(f"Error generating embedding: {e}")
         raise
 
 
@@ -108,7 +108,7 @@ Please provide a helpful and accurate response based on the paper content. If th
         return response.text
 
     except Exception as e:
-        logger.error(f"Error in chat completion: {e}")
+        # logger.error(f"Error in chat completion: {e}")
         raise
 
 
@@ -177,7 +177,7 @@ def generate_pdf_thumbnail(
         return img_buffer
 
     except Exception as e:
-        logger.error(f"Error generating PDF thumbnail: {e}")
+        # logger.error(f"Error generating PDF thumbnail: {e}")
         raise
 
 
@@ -241,11 +241,11 @@ Markdown:
             return summary_data
 
         except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(f"JSON parsing failed: {e}, using default summary")
+            # logger.warning(f"JSON parsing failed: {e}, using default summary")
             return default_summary
 
     except Exception as e:
-        logger.error(f"Error generating summary: {e}")
+        # logger.error(f"Error generating summary: {e}")
         return default_summary
 
 

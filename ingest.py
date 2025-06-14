@@ -67,7 +67,7 @@ async def pdf_to_markdown(pdf_path: str) -> str:
         markdown = result.document.export_to_markdown()
         return markdown
     except Exception as e:
-        logger.error(f"Docling failed for {pdf_path}: {e}")
+        # logger.error(f"Docling failed for {pdf_path}: {e}")
         raise
 
 
@@ -76,7 +76,7 @@ async def extract_pdf_first_page_text(pdf_path: str) -> Optional[str]:
     try:
         reader = PdfReader(pdf_path)
         if len(reader.pages) == 0:
-            logger.warning(f"PDF has no pages: {pdf_path}")
+            # logger.warning(f"PDF has no pages: {pdf_path}")
             return None
 
         # Extract text from first page
@@ -84,12 +84,12 @@ async def extract_pdf_first_page_text(pdf_path: str) -> Optional[str]:
         text = first_page.extract_text()
 
         if not text or len(text.strip()) < 50:  # Ensure we got meaningful text
-            logger.warning(f"First page text too short or empty: {pdf_path}")
+            # logger.warning(f"First page text too short or empty: {pdf_path}")
             return None
 
-        logger.info(
-            f"📄 Extracted {len(text)} characters from first page of {pdf_path}"
-        )
+        # logger.info(
+        #     f"📄 Extracted {len(text)} characters from first page of {pdf_path}"
+        # )
 
         # Save debug text file
         # await save_debug_text(pdf_path, text)
@@ -97,7 +97,7 @@ async def extract_pdf_first_page_text(pdf_path: str) -> Optional[str]:
         return text
 
     except Exception as e:
-        logger.error(f"Failed to extract first page text from {pdf_path}: {e}")
+        # logger.error(f"Failed to extract first page text from {pdf_path}: {e}")
         return None
 
 
@@ -119,11 +119,12 @@ async def save_debug_text(pdf_path: str, text: str) -> None:
             f.write(text)
             f.write(f"\n\n=== End of text ({len(text)} characters) ===\n")
 
-        logger.info(f"💾 Saved debug text to: {debug_path}")
+        # logger.info(f"💾 Saved debug text to: {debug_path}")
 
     except Exception as e:
-        logger.warning(f"Failed to save debug text for {pdf_path}: {e}")
+        # logger.warning(f"Failed to save debug text for {pdf_path}: {e}")
         # Don't raise exception as this is just debug functionality
+        pass
 
 
 async def extract_metadata_from_first_page(
@@ -136,36 +137,36 @@ async def extract_metadata_from_first_page(
         if not first_page_text:
             return None
 
-        logger.info("🔍 Searching for identifiers in PDF first page...")
+        # logger.info("🔍 Searching for identifiers in PDF first page...")
 
         # Try to find identifiers and fetch metadata
         metadata = await identifier_extractor.fetch_metadata_by_identifier(
             first_page_text
         )
         if metadata:
-            logger.info(
-                "✅ Successfully extracted metadata from first page identifiers"
-            )
+            # logger.info(
+            #     "✅ Successfully extracted metadata from first page identifiers"
+            # )
             return metadata
 
         # If no identifiers found, try title-based search with first page
-        logger.info("🔍 No identifiers in first page, trying title extraction...")
+        # logger.info("🔍 No identifiers in first page, trying title extraction...")
         title = extract_title_from_text(first_page_text)
 
         if title:
-            logger.info(f"📖 Extracted title from first page: {title}")
+            # logger.info(f"📖 Extracted title from first page: {title}")
             metadata = await identifier_extractor.fetch_metadata_by_title(title)
             if metadata:
-                logger.info(
-                    "✅ Successfully found metadata via first page title search"
-                )
+                # logger.info(
+                #     "✅ Successfully found metadata via first page title search"
+                # )
                 return metadata
 
-        logger.info("❌ First page metadata extraction failed")
+        # logger.info("❌ First page metadata extraction failed")
         return None
 
     except Exception as e:
-        logger.warning(f"⚠️ Failed to extract metadata from first page: {e}")
+        # logger.warning(f"⚠️ Failed to extract metadata from first page: {e}")
         return None
 
 
@@ -239,31 +240,31 @@ async def extract_metadata_from_identifiers_and_title(
         # First, try to extract using identifiers from the full markdown
         metadata = await identifier_extractor.fetch_metadata_by_identifier(markdown)
         if metadata:
-            logger.info("✅ Successfully extracted metadata from identifiers")
+            # logger.info("✅ Successfully extracted metadata from identifiers")
             return metadata
 
         # If no identifiers found, try to extract title first and search by title
-        logger.info(
-            "🔍 No identifiers found, attempting title extraction for arXiv search"
-        )
+        # logger.info(
+        #     "🔍 No identifiers found, attempting title extraction for arXiv search"
+        # )
 
         # Use a simple regex to extract potential title from markdown
         title = extract_title_from_text(markdown)
 
         if title:
-            logger.info(f"📖 Extracted title for search: {title}")
+            # logger.info(f"📖 Extracted title for search: {title}")
             metadata = await identifier_extractor.fetch_metadata_by_title(title)
             if metadata:
-                logger.info(
-                    "✅ Successfully found metadata via title-based arXiv search"
-                )
+                # logger.info(
+                #     "✅ Successfully found metadata via title-based arXiv search"
+                # )
                 return metadata
 
-        logger.info("❌ Both identifier and title-based searches failed")
+        # logger.info("❌ Both identifier and title-based searches failed")
         return None
 
     except Exception as e:
-        logger.warning(f"⚠️ Failed to extract metadata from identifiers/title: {e}")
+        # logger.warning(f"⚠️ Failed to extract metadata from identifiers/title: {e}")
         return None
 
 
@@ -317,17 +318,17 @@ Markdown:
             ),
         )
         raw_content = response.text
-        logger.debug(f"LLM raw response: {raw_content}")
+        # logger.debug(f"LLM raw response: {raw_content}")
 
         # Try to validate with Pydantic
         try:
             data = PaperMetadata.model_validate_json(raw_content).model_dump()
-            logger.info("✅ LLM metadata extraction successful")
+            # logger.info("✅ LLM metadata extraction successful")
             return data
         except (ValidationError, json.JSONDecodeError) as validation_error:
-            logger.warning(
-                f"⚠️ JSON validation failed, trying to parse manually: {validation_error}"
-            )
+            # logger.warning(
+            #     f"⚠️ JSON validation failed, trying to parse manually: {validation_error}"
+            # )
 
             # Try to parse JSON manually and extract what we can
             try:
@@ -352,15 +353,15 @@ Markdown:
                     else:
                         extracted_data["keywords"] = []
 
-                logger.info("✅ Partial LLM metadata extraction successful")
+                # logger.info("✅ Partial LLM metadata extraction successful")
                 return extracted_data
 
             except json.JSONDecodeError:
-                logger.warning("⚠️ Could not parse JSON at all, using defaults")
+                # logger.warning("⚠️ Could not parse JSON at all, using defaults")
                 return default_metadata
 
     except Exception as e:
-        logger.error(f"❌ LLM metadata extraction failed completely: {e}")
+        # logger.error(f"❌ LLM metadata extraction failed completely: {e}")
         return default_metadata
 
 
@@ -374,12 +375,12 @@ async def extract_metadata(
 
     # Strategy 1: Try to extract using PDF first page (if pdf_path provided)
     if pdf_path:
-        logger.info("📄 Trying PDF first page metadata extraction...")
+        # logger.info("📄 Trying PDF first page metadata extraction...")
         metadata = await extract_metadata_from_first_page(
             pdf_path, identifier_extractor
         )
         if metadata:
-            logger.info("📡 Using metadata from PDF first page")
+            # logger.info("📡 Using metadata from PDF first page")
 
             # Check if we're missing important fields and supplement with LLM if needed
             missing_fields = []
@@ -389,9 +390,9 @@ async def extract_metadata(
                 missing_fields.append("keywords")
 
             if missing_fields:
-                logger.info(
-                    f"🔍 Supplementing missing fields with LLM: {missing_fields}"
-                )
+                # logger.info(
+                #     f"🔍 Supplementing missing fields with LLM: {missing_fields}"
+                # )
                 llm_metadata = await extract_metadata_llm_fallback(
                     markdown, genai_client
                 )
@@ -410,7 +411,7 @@ async def extract_metadata(
 
     if metadata:
         # If we got metadata from API, we still might want to enhance it with LLM for missing fields
-        logger.info("📡 Using metadata from markdown identifiers")
+        # logger.info("📡 Using metadata from markdown identifiers")
 
         # Check if we're missing important fields and supplement with LLM if needed
         missing_fields = []
@@ -420,7 +421,7 @@ async def extract_metadata(
             missing_fields.append("keywords")
 
         if missing_fields:
-            logger.info(f"🔍 Supplementing missing fields with LLM: {missing_fields}")
+            # logger.info(f"🔍 Supplementing missing fields with LLM: {missing_fields}")
             llm_metadata = await extract_metadata_llm_fallback(markdown, genai_client)
 
             # Fill in missing fields from LLM
@@ -431,7 +432,7 @@ async def extract_metadata(
         return metadata
 
     # Strategy 3: Fallback to LLM-based extraction
-    logger.info("🤖 Falling back to LLM-based metadata extraction")
+    # logger.info("🤖 Falling back to LLM-based metadata extraction")
     return await extract_metadata_llm_fallback(markdown, genai_client)
 
 
@@ -439,7 +440,7 @@ async def get_embedding(text: str, genai_client: genai.Client) -> List[float]:
     """Use Google GenAI to get embedding"""
     # Handle empty or very short text
     if not text or len(text.strip()) < 3:
-        logger.warning("Text too short for embedding, returning zero vector")
+        # logger.warning("Text too short for embedding, returning zero vector")
         return [0.0] * 768
 
     try:
@@ -452,10 +453,10 @@ async def get_embedding(text: str, genai_client: genai.Client) -> List[float]:
             ),
         )
         embeddings = response.embeddings[0].values
-        logger.debug(f"[DEBUG] Embedding response: {embeddings[:5]}...")
+        # logger.debug(f"[DEBUG] Embedding response: {embeddings[:5]}...")
         return embeddings
     except Exception as e:
-        logger.error(f"Embedding generation failed for text (len={len(text)}): {e}")
+        # logger.error(f"Embedding generation failed for text (len={len(text)}): {e}")
         # Fallback: return a zero vector of the expected dimension
         return [0.0] * 768
 
@@ -573,11 +574,9 @@ def convert_to_relative_paths(absolute_paths, base_dir):
 
 async def main(data_root):
     """Main ingestion function"""
-    print(f"[DEBUG] Using DATABASE_URL: {DSN}")
-
     # Check for Google API key
     if not GOOGLE_API_KEY:
-        logger.error("❌ GOOGLE_API_KEY environment variable is not set")
+        # logger.error("❌ GOOGLE_API_KEY environment variable is not set")
         return
 
     db = Database(DSN)
@@ -592,9 +591,6 @@ async def main(data_root):
     try:
         # Get all PDF absolute paths
         all_pdf_absolute_paths = set(get_all_pdf_paths(data_root))
-        print(
-            f"[DEBUG] Found {len(all_pdf_absolute_paths)} PDFs in '{data_root}' (including subdirectories)"
-        )
 
         # Convert to relative paths for comparison with DB
         all_pdf_relative_paths = convert_to_relative_paths(
@@ -603,9 +599,6 @@ async def main(data_root):
 
         # Get already ingested relative paths from DB
         already_ingested_relative = set(await get_already_ingested_paths(db))
-        print(
-            f"[DEBUG] Found {len(already_ingested_relative)} already-ingested PDFs in DB"
-        )
 
         # Find new relative paths to process
         new_relative_paths = all_pdf_relative_paths - already_ingested_relative
@@ -634,14 +627,14 @@ async def main(data_root):
 
         for pdf_path in tqdm(sorted(new_absolute_paths), desc="Ingesting PDFs"):
             try:
-                logger.info(f"🔄 Processing: {pdf_path}")
+                # logger.info(f"🔄 Processing: {pdf_path}")
                 document_data = await process_pdf(
                     pdf_path, genai_client, data_root, identifier_extractor
                 )
                 document_id = await db.insert_document(document_data)
                 await db.update_paper_status(document_id, "processed")
                 processed_count += 1
-                logger.info(f"✅ Successfully ingested: {pdf_path} (ID: {document_id})")
+                # logger.info(f"✅ Successfully ingested: {pdf_path} (ID: {document_id})")
 
             except Exception as e:
                 failed_count += 1
@@ -649,16 +642,20 @@ async def main(data_root):
 
                 # Categorize errors for better debugging
                 if "docling" in str(e).lower() or "convert" in str(e).lower():
-                    logger.error(f"📄 PDF conversion failed for {pdf_path}: {e}")
+                    # logger.error(f"📄 PDF conversion failed for {pdf_path}: {e}")
+                    pass
                 elif "genai" in str(e).lower() or "connection" in str(e).lower():
-                    logger.error(f"🤖 LLM service error for {pdf_path}: {e}")
+                    # logger.error(f"🤖 LLM service error for {pdf_path}: {e}")
+                    pass
                 elif "database" in str(e).lower() or "postgres" in str(e).lower():
-                    logger.error(f"💾 Database error for {pdf_path}: {e}")
+                    # logger.error(f"💾 Database error for {pdf_path}: {e}")
+                    pass
                 else:
-                    logger.error(f"❌ Unknown error for {pdf_path} ({error_type}): {e}")
+                    # logger.error(f"❌ Unknown error for {pdf_path} ({error_type}): {e}")
+                    pass
 
                 # Print traceback only for debugging (comment out in production)
-                logger.debug(f"Full traceback for {pdf_path}:", exc_info=True)
+                # logger.debug(f"Full traceback for {pdf_path}:", exc_info=True)
 
                 # Continue to next file
                 continue

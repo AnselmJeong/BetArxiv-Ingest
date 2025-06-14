@@ -46,7 +46,7 @@ class ArxivAPIClient:
                 if re.match(r"^\d{4}\.\d{4,5}(?:v\d+)?$", arxiv_id):
                     # Remove version number for API query if present
                     base_id = re.sub(r"v\d+$", "", arxiv_id)
-                    logger.info(f"Found arXiv ID: {arxiv_id} (base: {base_id})")
+                    # logger.info(f"Found arXiv ID: {arxiv_id} (base: {base_id})")
                     return base_id
 
         return None
@@ -61,7 +61,7 @@ class ArxivAPIClient:
             return self._parse_arxiv_response(response.text)
 
         except Exception as e:
-            logger.error(f"Error fetching arXiv metadata for {arxiv_id}: {e}")
+            # logger.error(f"Error fetching arXiv metadata for {arxiv_id}: {e}")
             return None
 
     def _parse_arxiv_response(self, xml_content: str) -> Optional[Dict]:
@@ -77,7 +77,7 @@ class ArxivAPIClient:
 
             entry = root.find("atom:entry", ns)
             if entry is None:
-                logger.warning("No entry found in arXiv response")
+                # logger.warning("No entry found in arXiv response")
                 return None
 
             # Extract metadata
@@ -134,7 +134,7 @@ class ArxivAPIClient:
             }
 
         except Exception as e:
-            logger.error(f"Error parsing arXiv response: {e}")
+            # logger.error(f"Error parsing arXiv response: {e}")
             return None
 
 
@@ -159,7 +159,7 @@ class ArxivSearchClient:
 
             # If no results, try a more flexible search
             if not results:
-                logger.info("🔍 Exact title search failed, trying flexible search...")
+                # logger.info("🔍 Exact title search failed, trying flexible search...")
                 # Try title search without quotes (allows partial matching)
                 results = self._search_arxiv_with_query(
                     f"ti:{clean_title}", max_results
@@ -167,12 +167,12 @@ class ArxivSearchClient:
 
             # If still no results, try all fields search
             if not results:
-                logger.info("🔍 Title field search failed, trying all fields...")
+                # logger.info("🔍 Title field search failed, trying all fields...")
                 # Search in all fields
                 results = self._search_arxiv_with_query(clean_title, max_results)
 
             if not results:
-                logger.warning(f"No arXiv papers found for title: {title}")
+                # logger.warning(f"No arXiv papers found for title: {title}")
                 return None
 
             # Sort by similarity and return the best match
@@ -183,18 +183,18 @@ class ArxivSearchClient:
             if (
                 best_match["similarity_score"] > 0.4
             ):  # Lower threshold for more flexibility
-                logger.info(
-                    f"Found arXiv paper by title search: {best_match['title']} (similarity: {best_match['similarity_score']:.2f})"
-                )
+                # logger.info(
+                #     f"Found arXiv paper by title search: {best_match['title']} (similarity: {best_match['similarity_score']:.2f})"
+                # )
                 return best_match
             else:
-                logger.warning(
-                    f"Best match similarity too low: {best_match['similarity_score']:.2f}"
-                )
+                # logger.warning(
+                #     f"Best match similarity too low: {best_match['similarity_score']:.2f}"
+                # )
                 return None
 
         except Exception as e:
-            logger.error(f"Failed to search arXiv by title '{title}': {str(e)}")
+            # logger.error(f"Failed to search arXiv by title '{title}': {str(e)}")
             return None
 
     def _search_arxiv_with_query(self, query: str, max_results: int) -> List[Dict]:
@@ -242,7 +242,7 @@ class ArxivSearchClient:
 
             return results
         except Exception as e:
-            logger.warning(f"arXiv search failed for query '{query}': {str(e)}")
+            # logger.warning(f"arXiv search failed for query '{query}': {str(e)}")
             return []
 
     def _clean_title_for_search(self, title: str) -> str:
@@ -322,7 +322,7 @@ class CrossRefAPIClient:
             return self._parse_crossref_response(data)
 
         except Exception as e:
-            logger.error(f"Error fetching CrossRef metadata for {doi}: {e}")
+            # logger.error(f"Error fetching CrossRef metadata for {doi}: {e}")
             return None
 
     def _parse_crossref_response(self, data: Dict) -> Optional[Dict]:
@@ -387,7 +387,7 @@ class CrossRefAPIClient:
             }
 
         except Exception as e:
-            logger.error(f"Error parsing CrossRef response: {e}")
+            # logger.error(f"Error parsing CrossRef response: {e}")
             return None
 
 
@@ -420,19 +420,19 @@ class IdentifierExtractor:
 
         # Try arXiv first (typically more reliable for preprints)
         if arxiv_id:
-            logger.info(f"Found arXiv ID: {arxiv_id}")
+            # logger.info(f"Found arXiv ID: {arxiv_id}")
             metadata = await self.arxiv_client.fetch_metadata(arxiv_id)
             if metadata:
                 return metadata
 
         # Try DOI if arXiv didn't work
         if doi:
-            logger.info(f"Found DOI: {doi}")
+            # logger.info(f"Found DOI: {doi}")
             metadata = await self.crossref_client.fetch_metadata(doi)
             if metadata:
                 return metadata
 
-        logger.warning("No valid identifiers found or metadata retrieval failed")
+        # logger.warning("No valid identifiers found or metadata retrieval failed")
         return None
 
     async def fetch_metadata_by_title(self, title: str) -> Optional[Dict]:
@@ -441,10 +441,10 @@ class IdentifierExtractor:
         This is useful when no identifiers are found in the text.
         """
         if not title or len(title.strip()) < 5:
-            logger.warning("Title too short or empty for search")
+            # logger.warning("Title too short or empty for search")
             return None
 
-        logger.info(f"Searching arXiv by title: {title}")
+        # logger.info(f"Searching arXiv by title: {title}")
         # ArxivSearchClient.search_by_title is synchronous, no await needed
         metadata = self.arxiv_search_client.search_by_title(title)
         return metadata
@@ -470,14 +470,14 @@ class IdentifierExtractor:
             search_title = self._extract_title_from_text(text)
 
         if search_title:
-            logger.info(f"🔍 Attempting title-based search with: {search_title}")
+            # logger.info(f"🔍 Attempting title-based search with: {search_title}")
             metadata = await self.fetch_metadata_by_title(search_title)
             if metadata:
                 return metadata
 
-        logger.warning(
-            "Both identifier-based and title-based metadata extraction failed"
-        )
+        # logger.warning(
+        #     "Both identifier-based and title-based metadata extraction failed"
+        # )
         return None
 
     def _extract_title_from_text(self, text: str) -> Optional[str]:

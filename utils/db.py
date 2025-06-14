@@ -34,12 +34,12 @@ class Database:
         self.pool = await psycopg.AsyncConnection.connect(
             self.dsn, autocommit=True, row_factory=dict_row
         )
-        logger.info("Connected to PostgreSQL.")
+        # logger.info("Connected to PostgreSQL.")
 
     async def close(self):
         if self.pool:
             await self.pool.close()
-            logger.info("Closed PostgreSQL connection.")
+            # logger.info("Closed PostgreSQL connection.")
 
     # Document operations
     async def insert_document(self, document: DocumentCreate) -> UUID:
@@ -387,7 +387,7 @@ class Database:
                 return results
 
         except Exception as e:
-            logger.error(f"Semantic search failed: {e}")
+            # logger.error(f"Semantic search failed: {e}")
             # Fallback to simple text search
             return await self._fallback_text_search(query, folder_name, k, filters)
 
