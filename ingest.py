@@ -17,7 +17,7 @@ import re
 import json
 from pydantic import ValidationError
 
-from docling.document_converter import DocumentConverter
+from markitdown import MarkItDown
 from google import genai
 from google.genai import types
 from pypdf import PdfReader
@@ -31,6 +31,9 @@ dotenv.load_dotenv()
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", module="pdfminer")
+warnings.filterwarnings("ignore", module="httpx")
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +42,15 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# Suppress verbose logging from third-party libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
+logging.getLogger("pdfminer.pdffont").setLevel(logging.ERROR)
+logging.getLogger("google_genai").setLevel(logging.WARNING)
+logging.getLogger("google_genai.models").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("markitdown").setLevel(logging.WARNING)
 
 DSN = os.getenv("DATABASE_URL")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -60,14 +72,19 @@ class PaperMetadata(BaseModel):
 
 
 async def pdf_to_markdown(pdf_path: str) -> str:
-    """Use docling to convert PDF to Markdown"""
+    """Use markitdown to convert PDF to Markdown"""
     try:
-        converter = DocumentConverter()
-        result = converter.convert(pdf_path)
-        markdown = result.document.export_to_markdown()
-        return markdown
+        # markitdown은 동기 함수이므로 asyncio.to_thread로 감싸서 비동기로 실행
+        import asyncio
+
+        def _convert_pdf(path):
+            md = MarkItDown()
+            result = md.convert(path)
+            return result.text_content
+
+        return await asyncio.to_thread(_convert_pdf, pdf_path)
     except Exception as e:
-        # logger.error(f"Docling failed for {pdf_path}: {e}")
+        # logger.error(f"MarkItDown failed for {pdf_path}: {e}")
         raise
 
 
@@ -625,7 +642,13 @@ async def main(data_root):
         processed_count = 0
         failed_count = 0
 
-        for pdf_path in tqdm(sorted(new_absolute_paths), desc="Ingesting PDFs"):
+        for pdf_path in tqdm(
+            sorted(new_absolute_paths),
+            desc="Ingesting PDFs",
+            unit="files",
+            leave=True,
+            ncols=80,
+        ):
             try:
                 # logger.info(f"🔄 Processing: {pdf_path}")
                 document_data = await process_pdf(
@@ -641,7 +664,7 @@ async def main(data_root):
                 error_type = type(e).__name__
 
                 # Categorize errors for better debugging
-                if "docling" in str(e).lower() or "convert" in str(e).lower():
+                if "markitdown" in str(e).lower() or "convert" in str(e).lower():
                     # logger.error(f"📄 PDF conversion failed for {pdf_path}: {e}")
                     pass
                 elif "genai" in str(e).lower() or "connection" in str(e).lower():
