@@ -156,6 +156,13 @@ class ArxivSearchClient:
                 f"🔍 DEBUG: ArxivSearchClient.search_by_title called with max_results={max_results}"
             )
 
+            # 의미없는 제목 필터링 - arXiv 검색 시간 낭비 방지
+            if self._is_meaningless_title(title):
+                print(
+                    f"🔍 DEBUG: Skipping arXiv search for meaningless title: '{title[:50]}...'"
+                )
+                return None
+
             # Clean up title for better search
             clean_title = self._clean_title_for_search(title)
 
@@ -202,6 +209,45 @@ class ArxivSearchClient:
             # logger.error(f"Failed to search arXiv by title '{title}': {str(e)}")
             return None
 
+    def _is_meaningless_title(self, title: str) -> bool:
+        """Check if title is meaningless and should skip arXiv search."""
+        title_lower = title.lower()
+
+        # 명백히 잘못된 제목들
+        meaningless_patterns = [
+            "posting of this pdf is not permitted",
+            "for reprints or permissions contact",
+            "copyright",
+            "all rights reserved",
+            "not for distribution",
+            "confidential",
+            "draft",
+            "page",
+            "volume",
+            "issue",
+            "number",
+            "appendix",
+            "supplementary",
+            "figure",
+            "table",
+            "references",
+        ]
+
+        # 패턴 매칭
+        for pattern in meaningless_patterns:
+            if pattern in title_lower:
+                return True
+
+        # 너무 짧거나 긴 제목
+        if len(title.strip()) < 10 or len(title.strip()) > 200:
+            return True
+
+        # 숫자만으로 구성된 제목
+        if title.strip().replace(" ", "").replace("-", "").isdigit():
+            return True
+
+        return False
+
     def _search_arxiv_with_query(self, query: str, max_results: int) -> List[Dict]:
         """Perform arXiv search with a specific query and return results."""
         try:
@@ -210,58 +256,69 @@ class ArxivSearchClient:
                 f"🔍 DEBUG: arxiv.Search called with query='{query}', max_results={max_results}"
             )
 
-            # arxiv 라이브러리가 max_results를 무시하는 경우가 있으므로
-            # 더 작은 값으로 설정하고 결과를 직접 제한
+            # arxiv 라이브러리가 max_results를 완전히 무시하므로
+            # 매우 작은 값으로 설정하고 즉시 중단
             search = arxiv.Search(
                 query=query,
-                max_results=min(max_results, 10),  # 최대 10개로 제한
+                max_results=1,  # 강제로 1개만 요청 (하지만 여전히 무시될 수 있음)
                 sort_by=arxiv.SortCriterion.Relevance,
             )
 
             results = []
             count = 0
-            for paper in search.results():
-                if count >= max_results:  # 직접 결과 수 제한
-                    break
 
-                # Calculate similarity score (simple word matching)
-                similarity = self._calculate_title_similarity(
-                    query.replace("ti:", "").replace('"', ""), paper.title
-                )
+            # 첫 번째 결과만 받고 즉시 중단
+            try:
+                for paper in search.results():
+                    # Calculate similarity score (simple word matching)
+                    similarity = self._calculate_title_similarity(
+                        query.replace("ti:", "").replace('"', ""), paper.title
+                    )
 
-                # 서지 정보 구성
-                bib_data = {
-                    "title": paper.title,
-                    "authors": [author.name for author in paper.authors],
-                    "arxiv_id": paper.get_short_id(),
-                    "published": paper.published.strftime("%Y-%m-%d")
-                    if paper.published
-                    else None,
-                    "updated": paper.updated.strftime("%Y-%m-%d")
-                    if paper.updated
-                    else None,
-                    "journal_name": paper.journal_ref
-                    if paper.journal_ref
-                    else "arXiv preprint",
-                    "doi": paper.doi if paper.doi else None,
-                    "abstract": paper.summary,
-                    "keywords": paper.categories,
-                    "primary_category": paper.primary_category,
-                    "similarity_score": similarity,
-                    "publication_year": paper.published.year
-                    if paper.published
-                    else None,
-                    "volume": None,
-                    "issue": None,
-                }
-                results.append(bib_data)
-                count += 1
+                    # 서지 정보 구성
+                    bib_data = {
+                        "title": paper.title,
+                        "authors": [author.name for author in paper.authors],
+                        "arxiv_id": paper.get_short_id(),
+                        "published": paper.published.strftime("%Y-%m-%d")
+                        if paper.published
+                        else None,
+                        "updated": paper.updated.strftime("%Y-%m-%d")
+                        if paper.updated
+                        else None,
+                        "journal_name": paper.journal_ref
+                        if paper.journal_ref
+                        else "arXiv preprint",
+                        "doi": paper.doi if paper.doi else None,
+                        "abstract": paper.summary,
+                        "keywords": paper.categories,
+                        "primary_category": paper.primary_category,
+                        "similarity_score": similarity,
+                        "publication_year": paper.published.year
+                        if paper.published
+                        else None,
+                        "volume": None,
+                        "issue": None,
+                    }
+                    results.append(bib_data)
+                    count += 1
+
+                    # max_results에 도달하면 즉시 중단
+                    if count >= max_results:
+                        print(f"🔍 DEBUG: Early termination after {count} results")
+                        break
+
+            except Exception as iteration_error:
+                print(f"🔍 DEBUG: Search iteration stopped: {iteration_error}")
+                pass  # 첫 번째 결과라도 받았으면 계속 진행
 
             print(
                 f"🔍 DEBUG: Retrieved {len(results)} results (requested: {max_results})"
             )
             return results
+
         except Exception as e:
+            print(f"🔍 DEBUG: arxiv search completely failed: {e}")
             # logger.warning(f"arXiv search failed for query '{query}': {str(e)}")
             return []
 
