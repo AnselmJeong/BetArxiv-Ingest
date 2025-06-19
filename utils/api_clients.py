@@ -210,14 +210,20 @@ class ArxivSearchClient:
                 f"🔍 DEBUG: arxiv.Search called with query='{query}', max_results={max_results}"
             )
 
+            # arxiv 라이브러리가 max_results를 무시하는 경우가 있으므로
+            # 더 작은 값으로 설정하고 결과를 직접 제한
             search = arxiv.Search(
                 query=query,
-                max_results=max_results,
+                max_results=min(max_results, 10),  # 최대 10개로 제한
                 sort_by=arxiv.SortCriterion.Relevance,
             )
 
             results = []
+            count = 0
             for paper in search.results():
+                if count >= max_results:  # 직접 결과 수 제한
+                    break
+
                 # Calculate similarity score (simple word matching)
                 similarity = self._calculate_title_similarity(
                     query.replace("ti:", "").replace('"', ""), paper.title
@@ -249,7 +255,11 @@ class ArxivSearchClient:
                     "issue": None,
                 }
                 results.append(bib_data)
+                count += 1
 
+            print(
+                f"🔍 DEBUG: Retrieved {len(results)} results (requested: {max_results})"
+            )
             return results
         except Exception as e:
             # logger.warning(f"arXiv search failed for query '{query}': {str(e)}")
