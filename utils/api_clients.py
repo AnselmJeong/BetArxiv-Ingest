@@ -148,9 +148,14 @@ class ArxivSearchClient:
         """No resources to close for arxiv package."""
         pass
 
-    def search_by_title(self, title: str, max_results: int = 5) -> Optional[Dict]:
+    def search_by_title(self, title: str, max_results: int = 1) -> Optional[Dict]:
         """Search arXiv by title and return the best match."""
         try:
+            # DEBUG: 실제 max_results 값 확인
+            print(
+                f"🔍 DEBUG: ArxivSearchClient.search_by_title called with max_results={max_results}"
+            )
+
             # Clean up title for better search
             clean_title = self._clean_title_for_search(title)
 
@@ -200,6 +205,11 @@ class ArxivSearchClient:
     def _search_arxiv_with_query(self, query: str, max_results: int) -> List[Dict]:
         """Perform arXiv search with a specific query and return results."""
         try:
+            # DEBUG: arxiv.Search에 전달되는 값 확인
+            print(
+                f"🔍 DEBUG: arxiv.Search called with query='{query}', max_results={max_results}"
+            )
+
             search = arxiv.Search(
                 query=query,
                 max_results=max_results,
@@ -306,6 +316,74 @@ class CrossRefAPIClient:
 
         return None
 
+    async def search_by_title(self, title: str, max_results: int = 1) -> Optional[Dict]:
+        """Search CrossRef by title and return the best match."""
+        try:
+            # Clean up title for better search
+            clean_title = self._clean_title_for_search(title)
+
+            # Search using CrossRef API
+            url = f"{self.BASE_URL}"
+            params = {
+                "query.title": clean_title,
+                "rows": max_results,
+                "sort": "relevance",
+                "order": "desc",
+            }
+            headers = {
+                "Accept": "application/json",
+                "User-Agent": "BetArxiv/1.0 (mailto:your-email@example.com)",
+            }
+
+            response = await self.client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            items = data.get("message", {}).get("items", [])
+
+            if not items:
+                return None
+
+            # Return the first (most relevant) result
+            work = items[0]
+
+            # Calculate title similarity
+            result_title = work.get("title", [""])[0] if work.get("title") else ""
+            similarity = self._calculate_title_similarity(title, result_title)
+
+            # Only return if similarity is above threshold
+            if similarity > 0.3:  # Threshold for CrossRef matching
+                metadata = self._parse_crossref_response({"message": work})
+                if metadata:
+                    metadata["similarity_score"] = similarity
+                    return metadata
+
+            return None
+
+        except Exception as e:
+            # logger.error(f"Failed to search CrossRef by title '{title}': {str(e)}")
+            return None
+
+    def _clean_title_for_search(self, title: str) -> str:
+        """Clean title for better search results."""
+        # Remove common formatting and special characters
+        clean = re.sub(r"[^\w\s-]", " ", title)
+        clean = re.sub(r"\s+", " ", clean)
+        return clean.strip()
+
+    def _calculate_title_similarity(self, title1: str, title2: str) -> float:
+        """Calculate simple word-based similarity between two titles."""
+        words1 = set(title1.lower().split())
+        words2 = set(title2.lower().split())
+
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+
+        return len(intersection) / len(union) if union else 0.0
+
     async def fetch_metadata(self, doi: str) -> Optional[Dict]:
         """Fetch metadata for a DOI."""
         try:
@@ -392,7 +470,14 @@ class CrossRefAPIClient:
 
 
 class IdentifierExtractor:
-    """Main class for extracting and fetching metadata using arXiv or DOI."""
+    """
+    Main class for extracting and fetching metadata using arXiv ID, DOI, or title search.
+
+    Strategy:
+    1. arXiv: Used primarily for arXiv ID-based extraction
+    2. CrossRef: Used for DOI-based extraction and title-based search (prioritized)
+    3. arXiv search: Used as fallback for title-based search (preprints)
+    """
 
     def __init__(self):
         self.arxiv_client = ArxivAPIClient()
@@ -437,16 +522,33 @@ class IdentifierExtractor:
 
     async def fetch_metadata_by_title(self, title: str) -> Optional[Dict]:
         """
-        Search for metadata using title-based arXiv search.
+        Search for metadata using title-based search.
+        Prioritizes CrossRef over arXiv for better journal coverage.
         This is useful when no identifiers are found in the text.
         """
         if not title or len(title.strip()) < 5:
             # logger.warning("Title too short or empty for search")
             return None
 
-        # logger.info(f"Searching arXiv by title: {title}")
-        # ArxivSearchClient.search_by_title is synchronous, no await needed
+        # DEBUG: 어떤 검색이 실행되는지 확인
+        print(f"🔍 DEBUG: fetch_metadata_by_title called with title='{title}'")
+
+        # Strategy 1: Try CrossRef first (better for published papers)
+        print("🔍 DEBUG: Trying CrossRef search first...")
+        # logger.info(f"Searching CrossRef by title: {title}")
+        metadata = await self.crossref_client.search_by_title(title)
+        if metadata:
+            print("✅ DEBUG: CrossRef search successful!")
+            return metadata
+
+        # Strategy 2: Fallback to arXiv search (for preprints)
+        print("⚠️ DEBUG: CrossRef search failed, trying arXiv search...")
+        # logger.info(f"CrossRef search failed, trying arXiv by title: {title}")
         metadata = self.arxiv_search_client.search_by_title(title)
+        if metadata:
+            print("✅ DEBUG: arXiv search successful!")
+        else:
+            print("❌ DEBUG: Both CrossRef and arXiv searches failed!")
         return metadata
 
     async def fetch_metadata_comprehensive(
@@ -454,8 +556,8 @@ class IdentifierExtractor:
     ) -> Optional[Dict]:
         """
         Comprehensive metadata extraction strategy:
-        1. Try to find identifiers in text and fetch metadata
-        2. If no identifiers found, try title-based arXiv search
+        1. Try to find identifiers (arXiv ID, DOI) in text and fetch metadata
+        2. If no identifiers found, try title-based search (CrossRef first, then arXiv)
         3. Return None if both fail (caller can fallback to LLM)
         """
         # Strategy 1: Try identifier-based extraction
@@ -463,7 +565,7 @@ class IdentifierExtractor:
         if metadata:
             return metadata
 
-        # Strategy 2: Try title-based arXiv search
+        # Strategy 2: Try title-based search (CrossRef prioritized)
         # If title is not provided, try to extract it from text
         search_title = title
         if not search_title:
