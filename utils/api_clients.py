@@ -139,16 +139,18 @@ class ArxivAPIClient:
 
 
 class ArxivSearchClient:
-    """Client for searching arXiv papers by title using the arxiv package."""
+    """Client for searching arXiv papers by title using direct API calls."""
+
+    BASE_URL = "http://export.arxiv.org/api/query"
 
     def __init__(self):
-        pass
+        self.client = httpx.AsyncClient(timeout=30.0)
 
     async def close(self):
-        """No resources to close for arxiv package."""
-        pass
+        """Close the HTTP client."""
+        await self.client.aclose()
 
-    def search_by_title(self, title: str, max_results: int = 1) -> Optional[Dict]:
+    async def search_by_title(self, title: str, max_results: int = 1) -> Optional[Dict]:
         """Search arXiv by title and return the best match."""
         try:
             # DEBUG: 실제 max_results 값 확인
@@ -167,24 +169,24 @@ class ArxivSearchClient:
             clean_title = self._clean_title_for_search(title)
 
             # Try exact title search first
-            results = self._search_arxiv_with_query(f'ti:"{clean_title}"', max_results)
+            results = await self._search_arxiv_with_query(
+                f'ti:"{clean_title}"', max_results
+            )
 
             # If no results, try a more flexible search
             if not results:
-                # logger.info("🔍 Exact title search failed, trying flexible search...")
-                # Try title search without quotes (allows partial matching)
-                results = self._search_arxiv_with_query(
+                print("🔍 DEBUG: Exact title search failed, trying flexible search...")
+                results = await self._search_arxiv_with_query(
                     f"ti:{clean_title}", max_results
                 )
 
             # If still no results, try all fields search
             if not results:
-                # logger.info("🔍 Title field search failed, trying all fields...")
-                # Search in all fields
-                results = self._search_arxiv_with_query(clean_title, max_results)
+                print("🔍 DEBUG: Title field search failed, trying all fields...")
+                results = await self._search_arxiv_with_query(clean_title, max_results)
 
             if not results:
-                # logger.warning(f"No arXiv papers found for title: {title}")
+                print(f"🔍 DEBUG: No arXiv papers found for title: {title}")
                 return None
 
             # Sort by similarity and return the best match
@@ -192,21 +194,19 @@ class ArxivSearchClient:
             best_match = results[0]
 
             # Only return if similarity is above threshold
-            if (
-                best_match["similarity_score"] > 0.4
-            ):  # Lower threshold for more flexibility
-                # logger.info(
-                #     f"Found arXiv paper by title search: {best_match['title']} (similarity: {best_match['similarity_score']:.2f})"
-                # )
+            if best_match["similarity_score"] > 0.4:
+                print(
+                    f"🔍 DEBUG: Found arXiv paper with similarity: {best_match['similarity_score']:.2f}"
+                )
                 return best_match
             else:
-                # logger.warning(
-                #     f"Best match similarity too low: {best_match['similarity_score']:.2f}"
-                # )
+                print(
+                    f"🔍 DEBUG: Best match similarity too low: {best_match['similarity_score']:.2f}"
+                )
                 return None
 
         except Exception as e:
-            # logger.error(f"Failed to search arXiv by title '{title}': {str(e)}")
+            print(f"🔍 DEBUG: ArxivSearchClient failed: {str(e)}")
             return None
 
     def _is_meaningless_title(self, title: str) -> bool:
@@ -248,78 +248,159 @@ class ArxivSearchClient:
 
         return False
 
-    def _search_arxiv_with_query(self, query: str, max_results: int) -> List[Dict]:
-        """Perform arXiv search with a specific query and return results."""
+    async def _search_arxiv_with_query(
+        self, query: str, max_results: int
+    ) -> List[Dict]:
+        """Perform arXiv search using direct API call."""
         try:
-            # DEBUG: arxiv.Search에 전달되는 값 확인
             print(
-                f"🔍 DEBUG: arxiv.Search called with query='{query}', max_results={max_results}"
+                f"🔍 DEBUG: Direct arXiv API call with query='{query}', max_results={max_results}"
             )
 
-            # arxiv 라이브러리가 max_results를 완전히 무시하므로
-            # 매우 작은 값으로 설정하고 즉시 중단
-            search = arxiv.Search(
-                query=query,
-                max_results=1,  # 강제로 1개만 요청 (하지만 여전히 무시될 수 있음)
-                sort_by=arxiv.SortCriterion.Relevance,
-            )
+            # 직접 arXiv API 호출
+            params = {
+                "search_query": query,
+                "start": 0,
+                "max_results": max_results,  # 이제 실제로 제어 가능!
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            }
 
-            results = []
-            count = 0
+            response = await self.client.get(self.BASE_URL, params=params)
+            response.raise_for_status()
 
-            # 첫 번째 결과만 받고 즉시 중단
-            try:
-                for paper in search.results():
-                    # Calculate similarity score (simple word matching)
-                    similarity = self._calculate_title_similarity(
-                        query.replace("ti:", "").replace('"', ""), paper.title
-                    )
-
-                    # 서지 정보 구성
-                    bib_data = {
-                        "title": paper.title,
-                        "authors": [author.name for author in paper.authors],
-                        "arxiv_id": paper.get_short_id(),
-                        "published": paper.published.strftime("%Y-%m-%d")
-                        if paper.published
-                        else None,
-                        "updated": paper.updated.strftime("%Y-%m-%d")
-                        if paper.updated
-                        else None,
-                        "journal_name": paper.journal_ref
-                        if paper.journal_ref
-                        else "arXiv preprint",
-                        "doi": paper.doi if paper.doi else None,
-                        "abstract": paper.summary,
-                        "keywords": paper.categories,
-                        "primary_category": paper.primary_category,
-                        "similarity_score": similarity,
-                        "publication_year": paper.published.year
-                        if paper.published
-                        else None,
-                        "volume": None,
-                        "issue": None,
-                    }
-                    results.append(bib_data)
-                    count += 1
-
-                    # max_results에 도달하면 즉시 중단
-                    if count >= max_results:
-                        print(f"🔍 DEBUG: Early termination after {count} results")
-                        break
-
-            except Exception as iteration_error:
-                print(f"🔍 DEBUG: Search iteration stopped: {iteration_error}")
-                pass  # 첫 번째 결과라도 받았으면 계속 진행
-
+            # XML 파싱
+            results = self._parse_arxiv_search_response(response.text, query)
             print(
                 f"🔍 DEBUG: Retrieved {len(results)} results (requested: {max_results})"
             )
+
             return results
 
         except Exception as e:
-            print(f"🔍 DEBUG: arxiv search completely failed: {e}")
-            # logger.warning(f"arXiv search failed for query '{query}': {str(e)}")
+            print(f"🔍 DEBUG: Direct arXiv API call failed: {e}")
+            return []
+
+    def _parse_arxiv_search_response(
+        self, xml_content: str, original_query: str
+    ) -> List[Dict]:
+        """Parse arXiv search API XML response."""
+        try:
+            import xml.etree.ElementTree as ET
+
+            root = ET.fromstring(xml_content)
+
+            # Namespace for arXiv API
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "arxiv": "http://arxiv.org/schemas/atom",
+            }
+
+            entries = root.findall("atom:entry", ns)
+            results = []
+
+            for entry in entries:
+                # Extract metadata
+                title_elem = entry.find("atom:title", ns)
+                title = (
+                    title_elem.text.strip()
+                    if title_elem is not None
+                    else "Unknown Title"
+                )
+
+                # Authors
+                authors = []
+                for author in entry.findall("atom:author", ns):
+                    name = author.find("atom:name", ns)
+                    if name is not None:
+                        authors.append(name.text.strip())
+
+                # Abstract
+                summary_elem = entry.find("atom:summary", ns)
+                abstract = (
+                    summary_elem.text.strip() if summary_elem is not None else None
+                )
+
+                # Publication date
+                published_elem = entry.find("atom:published", ns)
+                publication_year = None
+                published_date = None
+                if published_elem is not None:
+                    try:
+                        from datetime import datetime
+
+                        date_obj = datetime.fromisoformat(
+                            published_elem.text.replace("Z", "+00:00")
+                        )
+                        publication_year = date_obj.year
+                        published_date = date_obj.strftime("%Y-%m-%d")
+                    except:
+                        pass
+
+                # Updated date
+                updated_elem = entry.find("atom:updated", ns)
+                updated_date = None
+                if updated_elem is not None:
+                    try:
+                        from datetime import datetime
+
+                        date_obj = datetime.fromisoformat(
+                            updated_elem.text.replace("Z", "+00:00")
+                        )
+                        updated_date = date_obj.strftime("%Y-%m-%d")
+                    except:
+                        pass
+
+                # Categories (for keywords)
+                categories = []
+                for category in entry.findall("atom:category", ns):
+                    term = category.get("term")
+                    if term:
+                        categories.append(term)
+
+                # arXiv ID from the ID field
+                arxiv_url_elem = entry.find("atom:id", ns)
+                arxiv_id = None
+                if arxiv_url_elem is not None:
+                    arxiv_id = arxiv_url_elem.text.split("/")[-1]
+
+                # Journal reference
+                journal_ref_elem = entry.find("arxiv:journal_ref", ns)
+                journal_name = (
+                    journal_ref_elem.text
+                    if journal_ref_elem is not None
+                    else "arXiv preprint"
+                )
+
+                # DOI
+                doi_elem = entry.find("arxiv:doi", ns)
+                doi = doi_elem.text if doi_elem is not None else None
+
+                # Calculate similarity score
+                clean_query = original_query.replace("ti:", "").replace('"', "").strip()
+                similarity = self._calculate_title_similarity(clean_query, title)
+
+                bib_data = {
+                    "title": title,
+                    "authors": authors,
+                    "arxiv_id": arxiv_id,
+                    "published": published_date,
+                    "updated": updated_date,
+                    "journal_name": journal_name,
+                    "doi": doi,
+                    "abstract": abstract,
+                    "keywords": categories,
+                    "similarity_score": similarity,
+                    "publication_year": publication_year,
+                    "volume": None,
+                    "issue": None,
+                }
+                results.append(bib_data)
+
+            return results
+
+        except Exception as e:
+            print(f"🔍 DEBUG: Failed to parse arXiv response: {e}")
             return []
 
     def _clean_title_for_search(self, title: str) -> str:
@@ -611,7 +692,7 @@ class IdentifierExtractor:
         # Strategy 2: Fallback to arXiv search (for preprints)
         print("⚠️ DEBUG: CrossRef search failed, trying arXiv search...")
         # logger.info(f"CrossRef search failed, trying arXiv by title: {title}")
-        metadata = self.arxiv_search_client.search_by_title(title)
+        metadata = await self.arxiv_search_client.search_by_title(title)
         if metadata:
             print("✅ DEBUG: arXiv search successful!")
         else:
